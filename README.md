@@ -123,20 +123,26 @@ compares `SELECT *` against named columns and `COUNT(DISTINCT)` against
 
 ## BI layer
 
-A one-page **Data Studio** report (Google renamed Looker Studio to Data Studio
+A four-page **Data Studio** report (Google renamed Looker Studio to Data Studio
 in 2026). It is the free tool: **not Looker**, and no LookML. It reads
 `agg_daily_zone` and `agg_hourly_demand` directly from BigQuery:
 
-- top 15 pickup zones by trips, with revenue (`agg_daily_zone`)
-- trips per day across Q1 2022 (`agg_daily_zone`); the sharp dip in late January most likely reflects the 29 January 2022 snowstorm
-- demand by pickup hour, lowest around 04:00–05:00 and highest around 18:00 (`agg_hourly_demand`)
-- total valid trips: 9.0M, which matches `fct_trips` (9,016,981)
+| Page | Content | Source |
+|---|---|---|
+| Overview | total valid trips (9.0M) and revenue ($180.2M), plus trips per day | `agg_daily_zone`, `agg_hourly_demand` |
+| Demand by hour | trips by pickup hour: lowest around 04:00–05:00, highest around 18:00 | `agg_hourly_demand` |
+| Top zones | top 15 pickup zones by trips, with revenue | `agg_daily_zone` |
+| Revenue over time | revenue per day across Q1 2022 | `agg_daily_zone` |
 
-![Data Studio dashboard](docs/dashboard.png)
+Both totals match `fct_trips` exactly (9,016,981 trips; $180,225,234.56,
+checked with a direct BigQuery query). The sharp dip in late January on both
+time series most likely reflects the 29 January 2022 snowstorm.
+
+![Data Studio dashboard, all four pages](docs/dashboard.png)
 
 The report is private to my Google account and uses owner's credentials.
-It is one page rather than separate pages per topic, and the fields keep
-their dbt column names.
+The layout is basic, and fields keep their dbt column names (for example
+`trip_count`).
 
 ## Running it
 
