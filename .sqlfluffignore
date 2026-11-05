@@ -1,0 +1,6 @@
+target/
+dbt_packages/
+.venv/
+# dbt {% test %} blocks are not plain Jinja; parsed and validated by `dbt parse` instead.
+tests/generic/
+macros/

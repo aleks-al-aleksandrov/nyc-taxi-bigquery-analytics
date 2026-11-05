@@ -1,0 +1,7 @@
+version: 2
+
+models:
+  - name: fct_trips_unpartitioned
+    description: Copy of fct_trips with no partitioning or clustering. Performance study only.
+  - name: fct_trips_partitioned
+    description: Copy of fct_trips integer-range partitioned on pickup_date_key, not clustered. Performance study only.

@@ -1,0 +1,121 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: One row per calendar day in the trip_start_date..trip_end_date window.
+    columns:
+      - name: date_key
+        description: YYYYMMDD integer; joins to fct_trips.pickup_date_key.
+        tests: [unique, not_null]
+      - name: date_day
+        tests: [unique, not_null]
+
+  - name: dim_zone
+    description: >
+      One row per TLC location id 1-265. Names and boroughs come from
+      taxi_zone_geom; ids missing there (264 Unknown, 265 Outside of NYC, and
+      any others) get placeholder labels and is_in_zone_reference = false.
+    columns:
+      - name: zone_id
+        tests: [unique, not_null]
+      - name: zone_name
+        tests: [not_null]
+
+  - name: dim_payment_type
+    description: One row per TLC payment type code (0-6).
+    columns:
+      - name: payment_type_id
+        tests: [unique, not_null]
+
+  - name: fct_trips
+    description: >
+      One row per valid trip (stg_trips where exclusion_reason is null).
+      Integer-range partitioned on pickup_date_key (one partition per day),
+      clustered by pickup_zone_id, payment_type_id. Filter on pickup_date_key
+      to prune partitions.
+    tests:
+      - expression_is_true:
+          name: fct_trips_dropoff_not_before_pickup
+          arguments:
+            expression: "dropoff_ts >= pickup_ts"
+    columns:
+      - name: trip_id
+        tests: [unique, not_null]
+      - name: pickup_date_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+      - name: pickup_date
+        tests:
+          - not_null
+      - name: pickup_zone_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_zone')
+                field: zone_id
+      - name: dropoff_zone_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_zone')
+                field: zone_id
+      - name: payment_type_id
+        description: NULL when the source did not record a payment type.
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_payment_type')
+                field: payment_type_id
+      - name: pickup_hour
+        tests:
+          - not_null
+          - accepted_range:
+              arguments: {min_value: 0, max_value: 23}
+      - name: trip_distance_miles
+        tests:
+          - not_null
+          - accepted_range:
+              arguments: {min_value: 0, max_value: 200}
+      - name: trip_duration_minutes
+        tests:
+          - not_null
+          - accepted_range:
+              arguments: {min_value: 0, max_value: 1440}
+      - name: fare_amount
+        tests:
+          - accepted_range:
+              arguments: {min_value: 0, max_value: 1000}
+      - name: total_amount
+        tests:
+          - accepted_range:
+              arguments: {min_value: 0, max_value: 1500}
+
+  - name: agg_daily_zone
+    description: One row per pickup_date x pickup_zone_id.
+    tests:
+      - expression_is_true:
+          name: agg_daily_zone_positive_trip_count
+          arguments:
+            expression: "trip_count > 0"
+    columns:
+      - name: pickup_date
+        tests: [not_null]
+      - name: pickup_zone_id
+        tests: [not_null]
+
+  - name: agg_hourly_demand
+    description: One row per pickup_date x pickup_hour.
+    columns:
+      - name: pickup_date
+        tests: [not_null]
+      - name: pickup_hour
+        tests:
+          - not_null
+          - accepted_range:
+              arguments: {min_value: 0, max_value: 23}

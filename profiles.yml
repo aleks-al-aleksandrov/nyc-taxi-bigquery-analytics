@@ -1,0 +1,23 @@
+# No secrets in this file. Authentication uses gcloud application-default
+# credentials (run `gcloud auth application-default login` once).
+# Usage: set GCP_PROJECT, then run dbt with --profiles-dir . (or DBT_PROFILES_DIR=.)
+nyc_taxi:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT', 'your-gcp-project-id') }}"
+      # Base dataset name. Custom schemas produce taxi_staging and taxi_marts.
+      dataset: taxi
+      # Public datasets live in the US multi-region; a query cannot read US data
+      # and write to an EU dataset, so the project's datasets must be in the US too.
+      location: US
+      threads: 4
+      job_execution_timeout_seconds: 600
+      job_retries: 1
+      priority: interactive
+      # Cost guardrail: any single query that would bill more than this fails
+      # instead of running. The source scan for stg_trips is ~7 GB, so 15 GB
+      # leaves headroom without allowing a runaway full scan of several years.
+      maximum_bytes_billed: 15000000000

@@ -1,0 +1,46 @@
+version: 2
+
+# Cost note: stg_trips is a view over an unpartitioned ~7.5 GB public table.
+# Every query against it (including tests) scans the source columns again, so
+# tests live on fct_trips (a table) wherever possible. Only the reconciliation
+# test (tests/assert_staging_fact_reconciliation.sql) reads stg_trips.
+
+models:
+  - name: stg_trips
+    description: >
+      One row per raw yellow-taxi trip record with a pickup in the configured
+      date window. Renamed and typed; no rows are removed. exclusion_reason is
+      NULL for valid trips, otherwise the first matching rule:
+      exact_duplicate, missing_timestamp, dropoff_before_pickup,
+      duration_over_24h, invalid_zone (outside 1-265), implausible_distance
+      (null, < 0 or > 200 miles), negative_amount (refunds/voids),
+      implausible_amount (fare > $1,000 or total > $1,500),
+      implausible_speed (average > 100 mph on trips of 1+ minute).
+    columns:
+      - name: trip_id
+        description: >
+          Surrogate key: MD5 of the full raw row. Not unique in staging, because
+          exact duplicate rows hash to the same value; duplicates after the first
+          are flagged exact_duplicate and excluded from fct_trips.
+      - name: pickup_ts
+        description: Meter engaged. Naive New York local time.
+      - name: dropoff_ts
+        description: Meter disengaged. Naive New York local time.
+      - name: pickup_zone_id
+        description: TLC zone id (1-263 real zones, 264 Unknown, 265 Outside of NYC).
+      - name: dropoff_zone_id
+        description: TLC zone id of dropoff.
+      - name: payment_type_id
+        description: TLC payment type code (see dim_payment_type).
+      - name: trip_duration_minutes
+        description: Dropoff minus pickup, in minutes.
+      - name: exclusion_reason
+        description: NULL when the trip is valid; otherwise why it is excluded from fct_trips.
+
+  - name: stg_zones
+    description: One row per TLC taxi zone from taxi_zone_geom, geometry dropped.
+    columns:
+      - name: zone_id
+        tests:
+          - unique
+          - not_null

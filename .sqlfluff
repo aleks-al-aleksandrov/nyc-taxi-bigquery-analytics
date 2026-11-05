@@ -1,0 +1,28 @@
+[sqlfluff]
+dialect = bigquery
+# Jinja templater (not dbt) so linting needs no warehouse connection.
+templater = jinja
+max_line_length = 120
+exclude_rules = ST06, AM04
+
+[sqlfluff:templater:jinja]
+apply_dbt_builtins = True
+
+[sqlfluff:templater:jinja:context]
+trip_start_date = 2022-01-01
+trip_end_date = 2022-04-01
+
+[sqlfluff:templater:jinja:macros]
+# Lint-only stubs for project macros (the real ones use dbt's return(), which
+# plain Jinja lacks). dbt parse in CI validates the real macros.
+date_key_partition = {% macro date_key_partition() %}{% endmacro %}
+to_date_key = {% macro to_date_key(e) %}cast(format_date('%Y%m%d', {{ e }}) as int64){% endmacro %}
+
+[sqlfluff:indentation]
+tab_space_size = 4
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = lower

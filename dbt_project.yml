@@ -1,0 +1,43 @@
+name: nyc_taxi
+version: "1.0.0"
+config-version: 2
+
+profile: nyc_taxi
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # Date window loaded from the source (end is exclusive). Q1 2022 is ~9M trips.
+  # The source table is NOT partitioned, so narrowing this window does not reduce
+  # bytes scanned when reading the source -- it only reduces rows written.
+  trip_start_date: "2022-01-01"
+  trip_end_date: "2022-04-01"
+  # The two perf-study copies of fct_trips triple its storage. The sandbox has a
+  # 10 GB free storage limit, and deleted tables keep counting against it during
+  # BigQuery's time-travel window. So the copies are opt-in:
+  #   dbt build --select tag:perf --vars '{build_perf: true}'
+  build_perf: false
+
+models:
+  nyc_taxi:
+    staging:
+      +schema: staging
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table
+    perf:
+      # Variants of fct_trips used only for the performance study.
+      +schema: marts
+      +materialized: table
+      +tags: ["perf"]
+      +enabled: "{{ var('build_perf', false) }}"
+
+analyses:
+  nyc_taxi:
+    +enabled: true

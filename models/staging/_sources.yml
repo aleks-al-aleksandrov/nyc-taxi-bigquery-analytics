@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: nyc_taxi_public
+    description: >
+      NYC TLC trip records published in the BigQuery public datasets program
+      (bigquery-public-data.new_york_taxi_trips, location US). Verified on
+      2026-11-05: tlc_yellow_trips_2022 has 36,256,539 rows, ~7.5 GB logical,
+      and is neither partitioned nor clustered.
+    database: bigquery-public-data
+    schema: new_york_taxi_trips
+    tables:
+      - name: tlc_yellow_trips_2022
+        description: Yellow taxi trips with a 2022 data file date. Not partitioned.
+      - name: taxi_zone_geom
+        description: >
+          TLC taxi zones (263 rows) with geometry. Does not contain the
+          pseudo-zones 264 (Unknown) and 265 (Outside of NYC) that appear in trip data.

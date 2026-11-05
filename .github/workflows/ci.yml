@@ -1,0 +1,31 @@
+name: ci
+
+# Lint and parse only. No warehouse connection and no credentials:
+# the profile's project falls back to a placeholder, and `dbt parse` for
+# BigQuery does not authenticate. Do not add service account keys as
+# secrets here without understanding the risks.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-parse:
+    runs-on: ubuntu-latest
+    env:
+      DBT_PROFILES_DIR: ${{ github.workspace }}
+      GCP_PROJECT: ci-placeholder-project
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: dbt parse
+        run: dbt parse --no-partial-parse
+      - name: sqlfluff lint
+        run: sqlfluff lint models tests analyses
