@@ -29,3 +29,5 @@ jobs:
         run: dbt parse --no-partial-parse
       - name: sqlfluff lint
         run: sqlfluff lint models tests analyses
+      - name: check published dashboard data
+        run: python scripts/check_dashboard_data.py

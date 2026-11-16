@@ -118,7 +118,6 @@ dispute 11,448; unknown 3. Voided (6) does not appear.
 - `assert_staging_fact_reconciliation`: staging rows = fact rows + excluded rows.
 - `assert_no_implausible_speed`: singular anomaly test on the fact table.
 - `assert_aggregates_match_fact`: both aggregate tables sum to the fact row count and are unique at their grain.
-
 - `assert_executive_aggregates_match_fact`: the two dashboard tables match the fact table on trip count and on revenue to the cent.
 
 53 tests in total. The generic tests `accepted_range` and `expression_is_true` live in
@@ -153,12 +152,21 @@ compares `SELECT *` against named columns and `COUNT(DISTINCT)` against
 
 [`docs/index.html`](docs/index.html) is a single static page for a
 non-technical reader: headline numbers, three findings, the charts behind
-them, and a section on how far to trust the data. It works in light and dark
-themes and on a phone, and every chart has hover details.
+them, a map of pickups by taxi zone, three decisions the findings support
+(each with the evidence still missing), and a section on how far to trust the
+data. It works in light and dark themes and on a phone, and every chart has
+hover details.
 
 - No number is typed by hand. `scripts/export_dashboard_data.py` reads
   `agg_daily_summary`, `agg_weekday_hour` and `agg_daily_zone` and writes
   `docs/dashboard_data.js` (29 KB); the page computes every figure from it.
+- The map outlines come from the public `taxi_zone_geom` table, simplified to
+  40 m in BigQuery and written to `docs/zones_geo.js` (69 KB) by the same
+  script. Zones 264 (Unknown) and 265 (Outside of NYC) have no outline; they
+  hold 1.2% of pickups and the page says so.
+- `scripts/check_dashboard_data.py` checks the two published files without a
+  warehouse: consecutive dates, 7 × 24 weekday-hour cells, equal trip and
+  revenue totals across the three tables, well-formed outlines. CI runs it.
 - No chart library and no build step: plain HTML, CSS and SVG.
 - Live at <https://aleks-al-aleksandrov.github.io/nyc-taxi-bigquery-analytics/>, or open `docs/index.html` in a browser.
 
@@ -202,7 +210,8 @@ export GCP_PROJECT=your-project-id                   # PowerShell: $env:GCP_PROJ
 dbt debug --profiles-dir .
 dbt build --profiles-dir .                    # all models + tests
 dbt build --profiles-dir . --select tag:perf --vars "{build_perf: true}"  # opt-in: the two extra fact variants
-python scripts/export_dashboard_data.py       # refresh docs/dashboard_data.js for the executive dashboard
+python scripts/export_dashboard_data.py       # refresh docs/dashboard_data.js and docs/zones_geo.js
+python scripts/check_dashboard_data.py        # validate those two files (no warehouse needed)
 python scripts/run_perf_study.py --dry-run-only
 python scripts/run_perf_study.py
 ```
@@ -256,5 +265,5 @@ to an EU dataset in the same query.
 ## CI
 
 `.github/workflows/ci.yml` runs `dbt parse` and `sqlfluff lint` against a
-placeholder project, with no warehouse connection and no credentials stored in
-GitHub.
+placeholder project, then `scripts/check_dashboard_data.py` on the published
+dashboard files. No warehouse connection and no credentials stored in GitHub.

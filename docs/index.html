@@ -93,6 +93,18 @@ h2 { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: 
 .bar-row .val { font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bar-row .val small { color: var(--muted); font-size: 12px; }
 
+.mapgrid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px 32px; align-items: start; }
+.map path.zone { fill: var(--city); stroke: var(--surface); stroke-width: 0.75; stroke-linejoin: round; }
+.map path.outline { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-linejoin: round; pointer-events: none; }
+.bins { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--ink-2); margin-top: 12px; font-variant-numeric: tabular-nums; }
+.bins span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.bins i { width: 14px; height: 10px; border-radius: 2px; background: var(--city); border: 1px solid var(--border); display: block; }
+.side-title { font-size: 13px; font-weight: 600; color: var(--ink); margin: 0 0 12px; }
+.bars.tight .bar-row { grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr); }
+.bars.tight .bar { min-width: 2px; }
+.side-note { font-size: 13px; color: var(--ink-2); margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--grid); }
+.side-note b { color: var(--ink); font-weight: 600; }
+
 .seg-block + .seg-block { margin-top: 18px; }
 .seg-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--ink-2); margin-bottom: 6px; flex-wrap: wrap; }
 .seg-head b { color: var(--ink); font-weight: 600; }
@@ -127,7 +139,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--grid)
   .kpis { grid-template-columns: 1fr 1fr; }
   .kpi.hero, .kpi:last-child { grid-column: 1 / -1; }
   .findings, .trust { grid-template-columns: 1fr; gap: 20px; }
-  .grid2 { grid-template-columns: 1fr; }
+  .grid2, .mapgrid { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) {
   .card { padding: 16px; }
@@ -175,6 +187,22 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--grid)
     </div>
   </section>
 
+  <section class="card" id="mapCard">
+    <h3 class="chart-title">Pickups cluster in Manhattan and at two airports</h3>
+    <p class="chart-sub" id="mapSub"></p>
+    <div class="mapgrid">
+      <div>
+        <div class="chart map" id="map"></div>
+        <div class="bins" id="mapBins"></div>
+      </div>
+      <div>
+        <p class="side-title">Share of pickups by borough</p>
+        <div class="bars tight" id="boroughs"></div>
+        <p class="side-note" id="mapNote"></p>
+      </div>
+    </div>
+  </section>
+
   <section class="grid2">
     <div class="card">
       <h3 class="chart-title">Two airports out-earn every Manhattan zone</h3>
@@ -196,6 +224,11 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--grid)
     <div class="tablewrap" id="months"></div>
   </section>
 
+  <section aria-label="Decisions">
+    <h2>What this supports, and what would confirm it</h2>
+    <div class="findings" id="decisions"></div>
+  </section>
+
   <section aria-label="Data quality">
     <h2>How far to trust these numbers</h2>
     <div class="trust">
@@ -215,6 +248,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--grid)
 <div id="tip" hidden></div>
 
 <script src="dashboard_data.js"></script>
+<script src="zones_geo.js"></script>
 <script>
 (function () {
   "use strict";
@@ -474,6 +508,129 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--grid)
   document.getElementById("hourSub").textContent =
     "Revenue per hour with a passenger on board, by pickup hour: $" + Math.round(best.rate) + " at " + hh(best.hr) + " against $" + Math.round(worst.rate) + " at " + hh(worst.hr) + ", when traffic slows every trip. Waiting time between trips is not recorded, so this is not total hourly earnings.";
 
+  // ---------- chart: pickup map ----------
+  // Shapes come from zones_geo.js (integer coordinates); the numbers come from DATA.zones.
+  var GEO = window.ZONES_GEO, zoneById = {};
+  Z.forEach(function (z) { zoneById[z[0]] = z; });
+  var BINS = [
+    { min: 150000, label: "150K or more", o: 1 },
+    { min: 50000, label: "50K to 150K", o: 0.77 },
+    { min: 10000, label: "10K to 50K", o: 0.53 },
+    { min: 1000, label: "1K to 10K", o: 0.3 },
+    { min: 0, label: "Under 1K", o: 0.08 }
+  ];
+  function binOf(v) { for (var i = 0; i < BINS.length; i++) if (v >= BINS[i].min) return BINS[i]; return BINS[BINS.length - 1]; }
+  var shapes = [], box = null, labelBox = {};
+  if (GEO) {
+    // Equirectangular projection, scaled for New York's latitude. North is up.
+    var kx = Math.cos(40.7 * Math.PI / 180);
+    box = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+    GEO.zones.forEach(function (g) {
+      var z = zoneById[g[0]], b = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+      var rings = g[1].map(function (flat) {
+        var pts = [];
+        for (var i = 0; i < flat.length; i += 2) {
+          var px = flat[i] * kx, py = -flat[i + 1];
+          pts.push(px, py);
+          if (px < b.x0) b.x0 = px; if (px > b.x1) b.x1 = px; if (py < b.y0) b.y0 = py; if (py > b.y1) b.y1 = py;
+        }
+        return pts;
+      });
+      if (b.x0 < box.x0) box.x0 = b.x0; if (b.x1 > box.x1) box.x1 = b.x1; if (b.y0 < box.y0) box.y0 = b.y0; if (b.y1 > box.y1) box.y1 = b.y1;
+      shapes.push({ id: g[0], zone: z, rings: rings, box: b });
+      labelBox[g[0]] = b;
+      if (z && z[2] === "Manhattan") {
+        var mb = labelBox.manhattan || (labelBox.manhattan = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity });
+        if (b.x0 < mb.x0) mb.x0 = b.x0; if (b.x1 > mb.x1) mb.x1 = b.x1; if (b.y0 < mb.y0) mb.y0 = b.y0; if (b.y1 > mb.y1) mb.y1 = b.y1;
+      }
+    });
+    BINS.forEach(function (bin) { bin.count = 0; });
+    shapes.forEach(function (sh) { binOf(sh.zone ? sh.zone[3] : 0).count++; });
+  }
+  function drawMap() {
+    var el = document.getElementById("map"); el.textContent = "";
+    if (!GEO) return;
+    var W = el.clientWidth, pad = 14;
+    var k = Math.min((W - 2 * pad) / (box.x1 - box.x0), 560 / (box.y1 - box.y0));
+    var H = Math.round((box.y1 - box.y0) * k + 2 * pad), ox = (W - (box.x1 - box.x0) * k) / 2;
+    function X(v) { return ox + (v - box.x0) * k; }
+    function Y(v) { return pad + (v - box.y0) * k; }
+    function pathOf(sh) {
+      return sh.rings.map(function (pts) {
+        var d = "";
+        for (var i = 0; i < pts.length; i += 2) d += (i ? "L" : "M") + X(pts[i]).toFixed(1) + "," + Y(pts[i + 1]).toFixed(1);
+        return d + "Z";
+      }).join("");
+    }
+    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Map of New York City taxi zones shaded by number of pickups in Q1 2022" });
+    var outline = s("path", { "class": "outline", visibility: "hidden" });
+    shapes.forEach(function (sh) {
+      var z = sh.zone, v = z ? z[3] : 0, d = pathOf(sh);
+      var p = s("path", { "class": "zone", d: d, "fill-opacity": binOf(v).o });
+      var html = z
+        ? "<b>" + z[1] + " (" + z[2] + ")</b>" + int.format(v) + " pickups, " + pct(v / zoneTrips, v / zoneTrips < 0.001 ? 2 : 1) + " of all<br>" + money(z[4]) + " revenue · $" + (z[4] / v).toFixed(2) + " per trip"
+        : "<b>Zone " + sh.id + "</b>No valid pickups in the quarter";
+      p.addEventListener("pointermove", function (e) { outline.setAttribute("d", d); outline.setAttribute("visibility", "visible"); showTip(e, html); });
+      p.addEventListener("pointerleave", function () { outline.setAttribute("visibility", "hidden"); hideTip(); });
+      svg.appendChild(p);
+    });
+    svg.appendChild(outline);
+    // four direct labels; everything else is in the tooltip
+    function label(text, x, y, anchor) { svg.appendChild(s("text", { x: x, y: y, "text-anchor": anchor, "class": "strong halo", "pointer-events": "none" }, text)); }
+    var b;
+    if ((b = labelBox.manhattan)) label("Manhattan", X(b.x0) - 6, Y(b.y0 + (b.y1 - b.y0) * 0.42), "end");
+    if ((b = labelBox[138])) label("LaGuardia", X((b.x0 + b.x1) / 2), Y(b.y0) - 6, "middle");
+    if ((b = labelBox[132])) label("JFK", X((b.x0 + b.x1) / 2), Y(b.y1) + 15, "middle");
+    if ((b = labelBox[1])) label("Newark", X((b.x0 + b.x1) / 2), Y(b.y1) + 15, "middle");
+    el.appendChild(svg);
+  }
+  (function () {
+    if (!GEO) { document.getElementById("mapCard").hidden = true; return; }
+    var quiet = BINS[BINS.length - 1].count, onMap = shapes.length;
+    var offMap = Z.filter(function (z) { return !labelBox[z[0]]; });
+    document.getElementById("mapSub").textContent =
+      "Pickups per taxi zone over the quarter. " + quiet + " of the " + onMap + " zones on the map had fewer than 1,000 pickups in three months, about " + Math.round(1000 / D.length) + " a day. " +
+      pct(sum(offMap, 3) / zoneTrips) + " of pickups have an unknown or out-of-city zone and are not drawn.";
+    var bins = document.getElementById("mapBins");
+    BINS.forEach(function (bin) {
+      var sp = h("span", "", ""), i = document.createElement("i");
+      i.style.opacity = bin.o; sp.appendChild(i);
+      sp.appendChild(document.createTextNode(bin.label + " (" + bin.count + " zones)"));
+      bins.appendChild(sp);
+    });
+    // borough bars
+    var groups = {}, order = [];
+    Z.forEach(function (z) {
+      var name = z[2] === "EWR" ? "Newark Airport" : (z[2] === "Unknown" || z[2] === "Outside of NYC") ? "Unknown or outside" : z[2];
+      if (!groups[name]) { groups[name] = { name: name, trips: 0, rev: 0, zones: 0 }; order.push(groups[name]); }
+      groups[name].trips += z[3]; groups[name].rev += z[4]; groups[name].zones++;
+    });
+    order.sort(function (a, b) { return b.trips - a.trips; });
+    var bbox = document.getElementById("boroughs"), max = order[0].trips;
+    order.forEach(function (g) {
+      var share = g.trips / zoneTrips, row = h("div", "bar-row");
+      row.tabIndex = 0;
+      row.setAttribute("aria-label", g.name + ": " + pct(share, share < 0.001 ? 2 : 1) + " of pickups, " + money(g.rev) + " revenue");
+      row.appendChild(h("div", "name", g.name));
+      var track = h("div", "track"), bar = h("div", "bar");
+      bar.style.width = "calc(" + (g.trips / max * 100).toFixed(1) + "% - " + (g.trips / max * 118).toFixed(0) + "px)";
+      track.appendChild(bar);
+      track.appendChild(h("div", "val", pct(share, share < 0.001 ? 2 : 1) + " <small>" + money(g.rev) + "</small>"));
+      row.appendChild(track);
+      var html = "<b>" + g.name + "</b>" + int.format(g.trips) + " pickups, " + pct(share, share < 0.001 ? 2 : 1) + " of all<br>" + money(g.rev) + " revenue, " + pct(g.rev / zoneRev) + " of the total · " + g.zones + (g.zones === 1 ? " zone" : " zones");
+      row.addEventListener("pointermove", function (e) { showTip(e, html); });
+      row.addEventListener("pointerleave", hideTip);
+      row.addEventListener("focus", function () { tipAtElement(row, html); });
+      row.addEventListener("blur", hideTip);
+      bbox.appendChild(row);
+    });
+    var queens = groups.Queens, qAir = (zoneById[132] ? zoneById[132][3] : 0) + (zoneById[138] ? zoneById[138][3] : 0);
+    var outer = ["Queens", "Brooklyn", "Bronx", "Staten Island"].reduce(function (a, n) { return a + (groups[n] ? groups[n].trips : 0); }, 0) - qAir;
+    document.getElementById("mapNote").innerHTML =
+      "<b>JFK and LaGuardia are " + pct(qAir / queens.trips, 0) + " of Queens pickups.</b> Leave the two airports out, and Queens, Brooklyn, the Bronx and Staten Island together produce " +
+      pct(outer / zoneTrips) + " of yellow taxi pickups, across " + (groups.Queens.zones + groups.Brooklyn.zones + groups.Bronx.zones + groups["Staten Island"].zones - 2) + " zones.";
+  })();
+
   // ---------- chart: top zones by revenue ----------
   (function () {
     var box = document.getElementById("zones"), AIR = { 1: 1, 132: 1, 138: 1 };
@@ -527,6 +684,34 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--grid)
       M.map(function (mo) { return row("td", mo.name, mo); }).join("") + "</tbody><tfoot>" + row("td", "Q1 2022", ALL) + "</tfoot></table>";
   })();
 
+  // ---------- decisions: what the findings support, and the missing evidence ----------
+  (function () {
+    var box = document.getElementById("decisions");
+    function add(big, body, check) {
+      var f = h("div", "finding");
+      f.appendChild(h("div", "big", big));
+      f.appendChild(h("p", "", body));
+      f.appendChild(h("p", "means", "<b>To confirm:</b> " + check));
+      box.appendChild(f);
+    }
+    function typicalOver(dows, from, to) {
+      var t = 0, n = 0;
+      WH.forEach(function (r) { if (dows.indexOf(r[0]) >= 0 && r[1] >= from && r[1] < to) { t += typical(r); n++; } });
+      return t / n;
+    }
+    var wkEve = typicalOver([2, 3, 4, 5, 6], 17, 20), weEve = typicalOver([1, 7], 17, 20);
+    var volumeShare = Math.log(last.perDay / first.perDay) / Math.log(last.revenue / last.days / (first.revenue / first.days));
+    add("Protect airport supply first",
+      "One airport trip earns as much as " + (airportPerTrip / cityPerTrip).toFixed(1) + " city trips, and airport trips grew from " + pct(first.airportTripShare) + " to " + pct(last.airportTripShare) + " of all trips between " + first.name + " and " + last.name + ".",
+      "the data has no queue time at the airport and no empty return leg, so revenue per trip overstates what an airport run earns per hour.");
+    add("Put capacity into weekday evenings",
+      "From 17:00 to 20:00 a typical weekday hour has " + int.format(wkEve) + " trips, " + Math.round((wkEve / weEve - 1) * 100) + "% more than the same hours at the weekend (" + int.format(weEve) + ").",
+      "these are completed trips, not requests. Riders who could not find a cab are invisible here, so the true peak may be higher.");
+    add("Plan for volume, not for price",
+      "About " + pct(volumeShare, 0) + " of the revenue growth came from more trips. Only " + pct(1 - volumeShare, 0) + " came from each trip earning more.",
+      "the same quarter of another year. Without it, recovery from the Omicron wave and ordinary seasonality look identical.");
+  })();
+
   // ---------- render + resize ----------
   // Charts are drawn at the container's real pixel width so text never scales.
   // A ResizeObserver also covers the first layout, when the width may still be 0.
@@ -534,7 +719,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--grid)
   function drawAll() {
     var w = document.getElementById("trend").clientWidth;
     if (w < 50 || w === lastW) return;
-    lastW = w; hideTip(); drawTrend(); drawHeat(); drawHour();
+    lastW = w; hideTip(); drawTrend(); drawHeat(); drawHour(); drawMap();
   }
   drawAll();
   new ResizeObserver(function () { clearTimeout(timer); timer = setTimeout(drawAll, 80); }).observe(document.getElementById("trend"));
