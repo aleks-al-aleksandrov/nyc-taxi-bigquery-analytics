@@ -9,3 +9,4 @@ __pycache__/
 *.json.key
 *service-account*.json
 .env
+.claude/

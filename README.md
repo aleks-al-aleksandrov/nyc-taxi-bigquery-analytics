@@ -9,6 +9,27 @@ and clustering change bytes billed and runtime.
 > orchestration are in my separate dbt + DuckDB project, because the sandbox
 > blocks the DML they need.
 
+## What the data says
+
+Q1 2022, valid yellow taxi trips only. Every figure below is computed from
+tested dbt tables and shown on the
+[executive dashboard](docs/index.html) (static page, source in `docs/`).
+
+| Finding | Measured |
+|---|---|
+| Demand grew through the quarter | 79,005 trips a day in January → 116,316 in March (**+47%**) |
+| Revenue grew faster than trips | $47.0M in January → $75.0M in March (**+60%**); revenue per trip $19.18 → $20.79 |
+| Airports carry the revenue | trips to or from JFK, LaGuardia or Newark are **8.2% of trips but 22.9% of revenue** ($55.76 vs $16.79 per trip) |
+| Demand is concentrated | 20 of 260 pickup zones produce 62% of pickups; Manhattan is 90.5% of pickups |
+| Peak demand | Friday 18:00, about 8,350 trips in a typical hour |
+| Best-paid hour | 05:00: $109 of revenue per hour with a passenger, against $68 at 15:00 |
+
+January 2022 coincided with the Omicron wave in New York. One quarter of data
+cannot separate that recovery from normal seasonality, so the growth figures
+describe what happened, not why.
+
+![Executive dashboard](docs/executive_dashboard.png)
+
 ## Architecture
 
 ```
@@ -21,11 +42,12 @@ taxi_staging  (views)    stg_trips, stg_zones
         v
 taxi_marts    (tables)   dim_date, dim_zone, dim_payment_type,
                          fct_trips  (integer-range partitioned per day, clustered by zone + payment type),
-                         agg_daily_zone, agg_hourly_demand
+                         agg_daily_zone, agg_hourly_demand,
+                         agg_daily_summary, agg_weekday_hour
                          fct_trips_unpartitioned, fct_trips_partitioned  (perf study only)
         |
-        v
-Data Studio report (formerly Looker Studio; over agg_* tables)
+        +--> scripts/export_dashboard_data.py --> docs/index.html  (executive dashboard, static)
+        +--> Data Studio report (formerly Looker Studio; live over agg_* tables)
 ```
 
 | Model | Grain | Notes |
@@ -38,6 +60,8 @@ Data Studio report (formerly Looker Studio; over agg_* tables)
 | `fct_trips` | one valid trip | Integer-range partitioned on `pickup_date_key` (one partition per day), clustered by `pickup_zone_id, payment_type_id`. 9,016,981 rows. |
 | `agg_daily_zone` | date × pickup zone | Trips, revenue, average tip, card tip rate, average duration and distance. |
 | `agg_hourly_demand` | date × hour | Demand by hour. |
+| `agg_daily_summary` | date | Additive sums only (trips, revenue, tips, card and cash trips, airport trips and revenue, occupied minutes). Ratios are computed at read time, so they stay correct over any period. |
+| `agg_weekday_hour` | day of week × hour (168 rows) | Typical demand per weekday-hour. Day counts come from `dim_date`, not the fact. |
 
 ### Data
 
@@ -95,7 +119,9 @@ dispute 11,448; unknown 3. Voided (6) does not appear.
 - `assert_no_implausible_speed`: singular anomaly test on the fact table.
 - `assert_aggregates_match_fact`: both aggregate tables sum to the fact row count and are unique at their grain.
 
-The generic tests `accepted_range` and `expression_is_true` live in
+- `assert_executive_aggregates_match_fact`: the two dashboard tables match the fact table on trip count and on revenue to the cent.
+
+53 tests in total. The generic tests `accepted_range` and `expression_is_true` live in
 `tests/generic/`, so the project needs no packages and `dbt parse` runs offline.
 
 ## Performance study
@@ -123,6 +149,21 @@ compares `SELECT *` against named columns and `COUNT(DISTINCT)` against
 
 ## BI layer
 
+### Executive dashboard
+
+[`docs/index.html`](docs/index.html) is a single static page for a
+non-technical reader: headline numbers, three findings, the charts behind
+them, and a section on how far to trust the data. It works in light and dark
+themes and on a phone, and every chart has hover details.
+
+- No number is typed by hand. `scripts/export_dashboard_data.py` reads
+  `agg_daily_summary`, `agg_weekday_hour` and `agg_daily_zone` and writes
+  `docs/dashboard_data.js` (29 KB); the page computes every figure from it.
+- No chart library and no build step: plain HTML, CSS and SVG.
+- To view it, open `docs/index.html` in a browser.
+
+### Data Studio report
+
 A four-page **Data Studio** report (Google renamed Looker Studio to Data Studio
 in 2026). It is the free tool: **not Looker**, and no LookML. It reads
 `agg_daily_zone` and `agg_hourly_demand` directly from BigQuery:
@@ -138,11 +179,12 @@ Both totals match `fct_trips` exactly (9,016,981 trips; $180,225,234.56,
 checked with a direct BigQuery query). The sharp dip in late January on both
 time series most likely reflects the 29 January 2022 snowstorm.
 
-![Data Studio dashboard, all four pages](docs/dashboard.png)
+![Data Studio report, all four pages](docs/data_studio_report.png)
 
 The report is private to my Google account and uses owner's credentials.
-The layout is basic, and fields keep their dbt column names (for example
-`trip_count`).
+Its layout is basic, and fields keep their dbt column names (for example
+`trip_count`). It shows the live BigQuery connection; the executive dashboard
+above is the presentation layer.
 
 ## Running it
 
@@ -160,6 +202,7 @@ export GCP_PROJECT=your-project-id                   # PowerShell: $env:GCP_PROJ
 dbt debug --profiles-dir .
 dbt build --profiles-dir .                    # all models + tests
 dbt build --profiles-dir . --select tag:perf --vars "{build_perf: true}"  # opt-in: the two extra fact variants
+python scripts/export_dashboard_data.py       # refresh docs/dashboard_data.js for the executive dashboard
 python scripts/run_perf_study.py --dry-run-only
 python scripts/run_perf_study.py
 ```

@@ -119,3 +119,44 @@ models:
           - not_null
           - accepted_range:
               arguments: {min_value: 0, max_value: 23}
+
+  - name: agg_daily_summary
+    description: >
+      One row per pickup date with additive sums (trips, revenue, tips, card
+      and cash trips, airport trips and revenue, occupied minutes, miles).
+      Feeds the executive dashboard. Ratios are computed at read time.
+    tests:
+      - expression_is_true:
+          name: agg_daily_summary_positive_trip_count
+          arguments:
+            expression: "trip_count > 0"
+    columns:
+      - name: pickup_date
+        tests: [unique, not_null]
+      - name: revenue_amount
+        tests: [not_null]
+      - name: airport_trip_count
+        description: Trips with pickup or dropoff in zone 1 (Newark), 132 (JFK) or 138 (LaGuardia).
+        tests: [not_null]
+
+  - name: agg_weekday_hour
+    description: >
+      One row per day of week x pickup hour (168 rows). avg_trips_per_day is
+      the demand of a typical weekday-hour; feeds the dashboard heatmap.
+    tests:
+      - expression_is_true:
+          name: agg_weekday_hour_day_count_is_12_or_13
+          arguments:
+            expression: "day_count between 12 and 14"
+    columns:
+      - name: day_of_week_number
+        description: BigQuery DAYOFWEEK, 1 = Sunday ... 7 = Saturday.
+        tests:
+          - not_null
+          - accepted_range:
+              arguments: {min_value: 1, max_value: 7}
+      - name: pickup_hour
+        tests:
+          - not_null
+          - accepted_range:
+              arguments: {min_value: 0, max_value: 23}

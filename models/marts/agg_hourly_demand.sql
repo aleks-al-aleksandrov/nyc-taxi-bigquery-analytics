@@ -1,4 +1,4 @@
--- One row per pickup date x pickup hour (0-23). Feeds the Looker Studio report.
+-- One row per pickup date x pickup hour (0-23). Feeds the Data Studio report.
 
 select
     fct.pickup_date,
