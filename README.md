@@ -13,7 +13,7 @@ and clustering change bytes billed and runtime.
 
 Q1 2022, valid yellow taxi trips only. Every figure below is computed from
 tested dbt tables and shown on the
-[executive dashboard](docs/index.html) (static page, source in `docs/`).
+[executive dashboard](https://aleks-al-aleksandrov.github.io/nyc-taxi-bigquery-analytics/) (live on GitHub Pages, source in `docs/`).
 
 | Finding | Measured |
 |---|---|
@@ -160,7 +160,7 @@ themes and on a phone, and every chart has hover details.
   `agg_daily_summary`, `agg_weekday_hour` and `agg_daily_zone` and writes
   `docs/dashboard_data.js` (29 KB); the page computes every figure from it.
 - No chart library and no build step: plain HTML, CSS and SVG.
-- To view it, open `docs/index.html` in a browser.
+- Live at <https://aleks-al-aleksandrov.github.io/nyc-taxi-bigquery-analytics/>, or open `docs/index.html` in a browser.
 
 ### Data Studio report
 
